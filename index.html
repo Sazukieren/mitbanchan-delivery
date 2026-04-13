@@ -1320,9 +1320,9 @@ function buildCardHtml(item, isCompleted, isTuesday) {
     <div style="margin-bottom:12px;">
       <div class="detail-label">지도/내비</div>
       <div class="nav-buttons">
-        <button class="btn btn-sm btn-secondary" onclick="openKakaoMap('${escapeHtml(item.addr)}')">카카오맵</button>
-        <button class="btn btn-sm btn-secondary" onclick="openNaverMap('${escapeHtml(item.addr)}')">네이버맵</button>
-        <button class="btn btn-sm btn-secondary" onclick="openKakaoNavi('${escapeHtml(item.addr)}','${escapeHtml(item.name)}')">카카오내비</button>
+        <button class="btn btn-sm btn-secondary" onclick="navKakao(${item.id})">카카오맵</button>
+        <button class="btn btn-sm btn-secondary" onclick="navNaver(${item.id})">네이버맵</button>
+        <button class="btn btn-sm btn-secondary" onclick="navKakaoNavi(${item.id})">카카오내비</button>
       </div>
     </div>
     <div style="margin-bottom:12px;">
@@ -1402,10 +1402,19 @@ async function loadPhotosForCard(id) {
       if (blob) {
         const url = URL.createObjectURL(blob);
         objectUrls[key] = url;
+        const photoKey = `${id}_${i}`;
         const wrap = document.createElement('div');
         wrap.className = 'photo-thumb-wrap';
-        wrap.innerHTML = `<img src="${url}" alt="사진 ${i+1}" onclick="viewPhoto('${url}')">
-          <button class="photo-del-btn" onclick="deletePhoto(${id},${i})">✕</button>`;
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = `사진 ${i+1}`;
+        img.addEventListener('click', () => viewPhoto(url));
+        const delBtn = document.createElement('button');
+        delBtn.className = 'photo-del-btn';
+        delBtn.textContent = '✕';
+        delBtn.addEventListener('click', () => deletePhoto(id, i));
+        wrap.appendChild(img);
+        wrap.appendChild(delBtn);
         grid.appendChild(wrap);
       }
     } catch(e) { console.warn('Photo load error:', e); }
@@ -1622,6 +1631,9 @@ function openKakaoNavi(addr, name) {
   const url = 'kakaomap://route?ep=' + encodeURIComponent(addr) + '&by=CAR';
   window.location.href = url;
 }
+function navKakao(id) { const it = loadItems().find(i => i.id === id); if (it) openKakaoMap(it.addr); }
+function navNaver(id) { const it = loadItems().find(i => i.id === id); if (it) openNaverMap(it.addr); }
+function navKakaoNavi(id) { const it = loadItems().find(i => i.id === id); if (it) openKakaoNavi(it.addr, it.name); }
 
 // ==================== KAKAO MAP ====================
 let kakaoMap = null;
@@ -2189,7 +2201,7 @@ function playBeep() {
 // ==================== SERVICE WORKER ====================
 function registerSW() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(e => console.log('SW reg failed:', e));
+    navigator.serviceWorker.register('./sw.js').catch(e => console.log('SW reg failed:', e));
   }
 }
 
