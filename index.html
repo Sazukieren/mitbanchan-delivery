@@ -12,7 +12,8 @@
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="apple-touch-startup-image" href="icon-512.png">
   <title>밑반찬배달</title>
-  <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=15691c254fcdc256864c06e150ac6c8d&libraries=services&autoload=false"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
@@ -1214,8 +1215,11 @@ function switchTab(tab) {
   document.getElementById('nav-' + tab).classList.add('active');
   currentTab = tab;
   if (tab === 'map') {
-    if (!mapInitialized) { loadKakaoMap(); }
-    else if (kakaoMap) { setTimeout(() => { kakaoMap.relayout(); kakao.maps.event.trigger(kakaoMap, 'resize'); }, 100); }
+    if (!mapInitialized) {
+      initLeafletMap();
+    } else if (map) {
+      setTimeout(function() { map.invalidateSize(); }, 100);
+    }
   } else if (tab === 'stats') {
     renderStats();
   } else if (tab === 'settings') {
@@ -1639,7 +1643,7 @@ function toggleCCTV(id, enabled) {
   if (!it) return;
   it.cctv = enabled;
   saveItems(items);
-  if (currentTab === 'map' && kakaoMap) refreshMapMarkers();
+  if (currentTab === 'map' && map) refreshMapMarkers();
 }
 
 function recordStart(id) {
@@ -1708,170 +1712,115 @@ function navKakao(id) { const it = loadItems().find(i => i.id === id); if (it) o
 function navNaver(id) { const it = loadItems().find(i => i.id === id); if (it) openNaverMap(it.addr); }
 function navKakaoNavi(id) { const it = loadItems().find(i => i.id === id); if (it) openKakaoNavi(it.addr, it.name); }
 
-// ==================== KAKAO MAP ====================
-let kakaoMap = null;
-let deliveryMarkers = [];
-let myPosOverlay = null;
-let geoWatchId = null;
+// ==================== MAP (Leaflet/OpenStreetMap) ====================
+let map = null;
+let myLocationMarker = null;
 
-function loadKakaoMap(retries) {
-  if (retries === undefined) retries = 20;
-  if (typeof kakao !== 'undefined' && kakao.maps) {
-    kakao.maps.load(function() {
-      initKakaoMap();
-    });
-  } else if (retries > 0) {
-    setTimeout(function() { loadKakaoMap(retries - 1); }, 300);
-  } else {
-    mapInitialized = false;
-    document.getElementById('kakao-map').innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);">⚠️ 카카오맵을 불러올 수 없습니다.<br>인터넷 연결을 확인하세요.</div>';
-  }
+function loadKakaoMap() {
+  initLeafletMap();
 }
 
 function initKakaoMap() {
-  const container = document.getElementById('kakao-map');
-  try {
-    kakaoMap = new kakao.maps.Map(container, {
-      center: new kakao.maps.LatLng(37.5145, 127.1050),
-      level: 5
-    });
-    mapInitialized = true;
-    addCCTVMarkers();
-    geocodeAndPlaceMarkers();
-    startGeoWatch();
-    if (typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function') {
-      document.getElementById('orientation-btn').style.display = '';
-    }
-    setTimeout(() => { kakaoMap.relayout(); kakao.maps.event.trigger(kakaoMap, 'resize'); }, 200);
-  } catch(e) {
-    console.error('Map init error:', e);
-    mapInitialized = false;
-    container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);">지도 초기화 실패: ' + escapeHtml(e.message) + '</div>';
+  initLeafletMap();
+}
+
+function initLeafletMap() {
+  if (mapInitialized && map) {
+    setTimeout(function() { map.invalidateSize(); }, 100);
+    return;
   }
+  const container = document.getElementById('kakao-map');
+  if (!container) return;
+  container.innerHTML = '';
+
+  map = L.map('kakao-map', { zoomControl: true }).setView([37.5012, 127.1273], 14);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19
+  }).addTo(map);
+
+  mapInitialized = true;
+  refreshMapMarkers();
+  setTimeout(function() { map.invalidateSize(); }, 300);
 }
 
-function addCCTVMarkers() {
-  if (!kakaoMap) return;
-  CCTV_LOCATIONS.forEach(loc => {
-    const pos = new kakao.maps.LatLng(loc.lat, loc.lng);
-    const ov = new kakao.maps.CustomOverlay({
-      position: pos,
-      content: '<div style="background:#f87171;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.3);">🚨</div>',
-      yAnchor: 1
-    });
-    ov.setMap(kakaoMap);
-    const iw = new kakao.maps.InfoWindow({
-      content: `<div style="padding:6px 10px;font-size:12px;font-weight:600;white-space:nowrap;">${escapeHtml(loc.name)}</div>`,
-      removable: true
-    });
-    const dm = new kakao.maps.Marker({position: pos});
-    dm.setMap(kakaoMap);
-    dm.setVisible(false);
-    kakao.maps.event.addListener(dm, 'click', () => iw.open(kakaoMap, dm));
-  });
-}
-
-let geocoder = null;
-
-function geocodeAndPlaceMarkers() {
-  if (!kakaoMap) return;
-  if (!kakao.maps.services) return;
-  if (!geocoder) geocoder = new kakao.maps.services.Geocoder();
-  deliveryMarkers.forEach(m => { try { m.setMap(null); } catch(e) {} });
-  deliveryMarkers = [];
-  const items = loadItems();
-  const checked = getTodayChecked();
-  items.forEach((item, idx) => {
-    setTimeout(() => {
-      if (!kakaoMap) return;
-      geocoder.addressSearch(item.addr, (result, status) => {
-        if (status !== kakao.maps.services.Status.OK || !result.length) return;
-        const pos = new kakao.maps.LatLng(parseFloat(result[0].y), parseFloat(result[0].x));
-        const isDone = checked.includes(item.id);
-        let color, label;
-        if (isDone) { color = '#4ade80'; label = '✓'; }
-        else if (item.cctv || item.parkingLevel === 3) { color = '#f87171'; label = '!'; }
-        else { color = '#60a5fa'; label = String(item.id); }
-        const ov = new kakao.maps.CustomOverlay({
-          position: pos,
-          content: `<div style="background:${color};color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.3);cursor:pointer;">${label}</div>`,
-          yAnchor: 1
-        });
-        ov.setMap(kakaoMap);
-        deliveryMarkers.push(ov);
-        const dm = new kakao.maps.Marker({position: pos});
-        dm.setMap(kakaoMap);
-        dm.setVisible(false);
-        deliveryMarkers.push(dm);
-        const iw = new kakao.maps.InfoWindow({
-          content: `<div style="padding:8px 12px;min-width:140px;"><strong style="font-size:13px;">${escapeHtml(item.name)}</strong><div style="font-size:11px;color:#666;margin-top:2px;">${escapeHtml(item.addr)}</div><div style="font-size:11px;margin-top:3px;">${isDone ? '✅ 완료' : '⏳ 대기'}</div></div>`,
-          removable: true
-        });
-        kakao.maps.event.addListener(dm, 'click', () => iw.open(kakaoMap, dm));
-      });
-    }, idx * 120);
-  });
+function isItemCompleted(id) {
+  return getTodayChecked().includes(id);
 }
 
 function refreshMapMarkers() {
-  if (!kakaoMap) return;
-  geocodeAndPlaceMarkers();
-  showToast('지도 마커 갱신 중...');
-}
+  if (!map) return;
+  map.eachLayer(function(layer) {
+    if (layer instanceof L.Marker || layer instanceof L.CircleMarker) {
+      if (layer !== myLocationMarker) map.removeLayer(layer);
+    }
+  });
 
-function startGeoWatch() {
-  if (!navigator.geolocation) return;
-  if (geoWatchId !== null) navigator.geolocation.clearWatch(geoWatchId);
-  geoWatchId = navigator.geolocation.watchPosition(
-    pos => updateMyPosition(pos.coords.latitude, pos.coords.longitude),
-    err => console.warn('Geo error:', err),
-    {enableHighAccuracy: true, timeout: 30000, maximumAge: 5000}
-  );
-  if (typeof DeviceOrientationEvent !== 'undefined' &&
-      typeof DeviceOrientationEvent.requestPermission !== 'function') {
-    window.addEventListener('deviceorientation', handleOrientation);
-  }
-}
+  const items = loadItems();
+  const deliveryCoords = [
+    [37.5041, 127.1039], // 1 강효임
+    [37.4960, 127.1200], // 2 김사임
+    [37.5044, 127.1042], // 3 박영자
+    [37.4963, 127.1198], // 4 김용석
+    [37.4965, 127.1195], // 5 임석율
+    [37.4968, 127.1193], // 6 김연순
+    [37.5005, 127.1270], // 7 김금자
+    [37.5027, 127.1155], // 8 백춘성
+    [37.4890, 127.0980], // 9 김정운
+    [37.4890, 127.0980], // 10 (9번동일)
+    [37.5010, 127.1265], // 11 이철승
+    [37.5003, 127.1289], // 12 황태영
+    [37.5003, 127.1289], // 13 (12번가족)
+    [37.5048, 127.1055], // 14 정애금
+    [37.5045, 127.1048], // 15 홍영순
+    [37.4948, 127.1176], // 16 이철우
+    [37.5073, 127.1023], // 17 조인선
+    [37.5070, 127.1025], // 18 박영일
+    [37.5038, 127.1035], // 19 이영민
+  ];
 
-function handleOrientation(e) {
-  if (e.alpha === null) return;
-}
+  items.forEach(function(item, idx) {
+    const coords = deliveryCoords[idx] || [37.5012 + (idx-10)*0.002, 127.1273 + (idx%5-2)*0.003];
+    const completed = isItemCompleted(item.id);
+    const color = completed ? '#4ade80' : '#FF6B35';
 
-function requestOrientationPermission() {
-  if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-    DeviceOrientationEvent.requestPermission().then(result => {
-      if (result === 'granted') {
-        window.addEventListener('deviceorientation', handleOrientation);
-        document.getElementById('orientation-btn').style.display = 'none';
-      }
-    }).catch(e => console.error(e));
-  }
-}
-
-function updateMyPosition(lat, lng) {
-  if (!kakaoMap) return;
-  const pos = new kakao.maps.LatLng(lat, lng);
-  if (!myPosOverlay) {
-    myPosOverlay = new kakao.maps.CustomOverlay({
-      position: pos,
-      content: '<div style="width:16px;height:16px;border-radius:50%;background:#3b82f6;border:3px solid #fff;box-shadow:0 0 0 4px rgba(59,130,246,0.3);"></div>',
-      yAnchor: 0.5
+    const icon = L.divIcon({
+      className: '',
+      html: '<div style="width:28px;height:28px;border-radius:50%;background:' + color + ';color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);">' + (idx+1) + '</div>',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
     });
-    myPosOverlay.setMap(kakaoMap);
-  } else {
-    myPosOverlay.setPosition(pos);
-  }
+
+    L.marker(coords, {icon: icon})
+      .addTo(map)
+      .bindPopup('<b>' + escapeHtml(item.name) + '</b><br><small>' + escapeHtml(item.addr) + '</small>');
+  });
+
+  CCTV_LOCATIONS.forEach(function(loc) {
+    L.circleMarker([loc.lat, loc.lng], {
+      color: '#f87171', fillColor: '#f87171', fillOpacity: 0.8, radius: 8, weight: 2
+    }).addTo(map).bindPopup('📷 ' + escapeHtml(loc.name));
+  });
 }
 
 function centerOnMyLocation() {
-  if (!kakaoMap) return;
-  if (!navigator.geolocation) { showToast('위치 서비스를 지원하지 않습니다', true); return; }
-  navigator.geolocation.getCurrentPosition(
-    pos => kakaoMap.setCenter(new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude)),
-    () => showToast('위치를 가져올 수 없습니다', true)
-  );
+  if (!map) { initLeafletMap(); return; }
+  if (!navigator.geolocation) { showToast('위치 권한이 없습니다', true); return; }
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    map.setView([lat, lng], 16);
+    if (myLocationMarker) map.removeLayer(myLocationMarker);
+    myLocationMarker = L.circleMarker([lat, lng], {
+      color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.9, radius: 10, weight: 3
+    }).addTo(map).bindPopup('📍 내 위치').openPopup();
+  }, function() {
+    showToast('위치를 가져올 수 없습니다', true);
+  });
 }
+
+function requestOrientationPermission() {}
 
 // ==================== STATISTICS ====================
 function renderStats() {
