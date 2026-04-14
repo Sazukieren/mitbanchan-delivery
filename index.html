@@ -1299,18 +1299,10 @@ function renderList() {
   renderSkipPanel();
   const container = document.getElementById('cards-container');
 
-  const deliveryCoords = [
-    [37.5041, 127.1039],[37.4960, 127.1200],[37.5044, 127.1042],[37.4963, 127.1198],
-    [37.4965, 127.1195],[37.4968, 127.1193],[37.5005, 127.1270],[37.5027, 127.1155],
-    [37.4890, 127.0980],[37.4890, 127.0980],[37.5010, 127.1265],[37.5003, 127.1289],
-    [37.5003, 127.1289],[37.5048, 127.1055],[37.5045, 127.1048],[37.4948, 127.1176],
-    [37.5073, 127.1023],[37.5070, 127.1025],[37.5038, 127.1035],
-  ];
-
   function getItemDist(item) {
     if (userLat === null) return Infinity;
     const idx = items.indexOf(item);
-    const coords = deliveryCoords[idx] || [37.5012 + (idx-10)*0.002, 127.1273 + (idx%5-2)*0.003];
+    const coords = getDeliveryCoords(idx);
     return calcDistance(userLat, userLng, coords[0], coords[1]);
   }
 
@@ -1755,6 +1747,33 @@ let compassHeading = 0;
 let mapSortByDistance = false;
 let listSortByDistance = false;
 
+// Shared delivery coordinates (index matches items array order)
+const DELIVERY_COORDS = [
+  [37.5041, 127.1039], // 1 강효임
+  [37.4960, 127.1200], // 2 김사임
+  [37.5044, 127.1042], // 3 박영자
+  [37.4963, 127.1198], // 4 김용석
+  [37.4965, 127.1195], // 5 임석율
+  [37.4968, 127.1193], // 6 김연순
+  [37.5005, 127.1270], // 7 김금자
+  [37.5027, 127.1155], // 8 백춘성
+  [37.4890, 127.0980], // 9 김정운
+  [37.4890, 127.0980], // 10 (9번동일)
+  [37.5010, 127.1265], // 11 이철승
+  [37.5003, 127.1289], // 12 황태영
+  [37.5003, 127.1289], // 13 (12번가족)
+  [37.5048, 127.1055], // 14 정애금
+  [37.5045, 127.1048], // 15 홍영순
+  [37.4948, 127.1176], // 16 이철우
+  [37.5073, 127.1023], // 17 조인선
+  [37.5070, 127.1025], // 18 박영일
+  [37.5038, 127.1035], // 19 이영민
+];
+
+function getDeliveryCoords(idx) {
+  return DELIVERY_COORDS[idx] || [37.5012 + (idx - 10) * 0.002, 127.1273 + (idx % 5 - 2) * 0.003];
+}
+
 // ----- Distance helpers -----
 function calcDistance(lat1, lng1, lat2, lng2) {
   const R = 6371000;
@@ -1848,6 +1867,8 @@ function initCompass() {
 }
 
 function handleOrientation(e) {
+  // webkitCompassHeading is degrees clockwise from north (iOS/Safari).
+  // For non-webkit browsers, alpha is degrees counter-clockwise, so invert with 360 - alpha.
   const heading = e.webkitCompassHeading || (e.alpha ? 360 - e.alpha : 0);
   compassHeading = heading;
   updateMyLocationMarker(userLat, userLng);
@@ -1880,34 +1901,13 @@ function toggleListSort() {
 function focusNearestIncomplete() {
   if (userLat === null || !map) return;
   const items = loadItems();
-  const deliveryCoords = [
-    [37.5041, 127.1039],
-    [37.4960, 127.1200],
-    [37.5044, 127.1042],
-    [37.4963, 127.1198],
-    [37.4965, 127.1195],
-    [37.4968, 127.1193],
-    [37.5005, 127.1270],
-    [37.5027, 127.1155],
-    [37.4890, 127.0980],
-    [37.4890, 127.0980],
-    [37.5010, 127.1265],
-    [37.5003, 127.1289],
-    [37.5003, 127.1289],
-    [37.5048, 127.1055],
-    [37.5045, 127.1048],
-    [37.4948, 127.1176],
-    [37.5073, 127.1023],
-    [37.5070, 127.1025],
-    [37.5038, 127.1035],
-  ];
 
   let nearest = null;
   let minDist = Infinity;
 
   items.forEach(function(item, idx) {
     if (isItemCompleted(item.id)) return;
-    const coords = deliveryCoords[idx] || [37.5012 + (idx-10)*0.002, 127.1273 + (idx%5-2)*0.003];
+    const coords = getDeliveryCoords(idx);
     const dist = calcDistance(userLat, userLng, coords[0], coords[1]);
     if (dist < minDist) {
       minDist = dist;
@@ -1973,33 +1973,12 @@ function refreshMapMarkers() {
   });
 
   let items = loadItems();
-  const deliveryCoords = [
-    [37.5041, 127.1039], // 1 강효임
-    [37.4960, 127.1200], // 2 김사임
-    [37.5044, 127.1042], // 3 박영자
-    [37.4963, 127.1198], // 4 김용석
-    [37.4965, 127.1195], // 5 임석율
-    [37.4968, 127.1193], // 6 김연순
-    [37.5005, 127.1270], // 7 김금자
-    [37.5027, 127.1155], // 8 백춘성
-    [37.4890, 127.0980], // 9 김정운
-    [37.4890, 127.0980], // 10 (9번동일)
-    [37.5010, 127.1265], // 11 이철승
-    [37.5003, 127.1289], // 12 황태영
-    [37.5003, 127.1289], // 13 (12번가족)
-    [37.5048, 127.1055], // 14 정애금
-    [37.5045, 127.1048], // 15 홍영순
-    [37.4948, 127.1176], // 16 이철우
-    [37.5073, 127.1023], // 17 조인선
-    [37.5070, 127.1025], // 18 박영일
-    [37.5038, 127.1035], // 19 이영민
-  ];
 
   // Build items array with coords
   let itemsWithCoords = items.map(function(item, idx) {
     return {
       item: item,
-      coords: deliveryCoords[idx] || [37.5012 + (idx-10)*0.002, 127.1273 + (idx%5-2)*0.003],
+      coords: getDeliveryCoords(idx),
       origIdx: idx
     };
   });
