@@ -953,6 +953,8 @@
 <!-- Toast -->
 <div id="toast"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script>
 'use strict';
 
@@ -997,6 +999,126 @@ const K = {
 
 const ALL_SERVICES = ['도시락','빨래수거','안부확인','약배달','청소','기타'];
 
+// ==================== FIREBASE ====================
+const firebaseConfig = {
+  apiKey: "AIzaSyBIDDuBhfuHfeLCEarlNwsx18Z9Qx1L0Uw",
+  authDomain: "mitbanchan.firebaseapp.com",
+  databaseURL: "https://mitbanchan-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "mitbanchan",
+  storageBucket: "mitbanchan.firebasestorage.app",
+  messagingSenderId: "800118599682",
+  appId: "1:800118599682:web:755caa589243b2b09df71b"
+};
+
+let db = null;
+let fbItems = null;
+let fbChecked = {};
+let fbTimes = {};
+let fbSkips = {};
+let fbLoadedFlags = { items: false, checked: false, times: false, skip: false };
+
+function initFirebase() {
+  try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+
+    db.ref('/mbc4/items').on('value', function(snap) {
+      const val = snap.val();
+      if (val === null) {
+        const obj = {};
+        DEFAULT_ITEMS.forEach(function(item, idx) {
+          const toSave = Object.assign({}, item, { order: idx });
+          delete toSave.photos;
+          delete toSave.photoMemo;
+          obj[item.id] = toSave;
+        });
+        db.ref('/mbc4/items').set(obj);
+        fbItems = DEFAULT_ITEMS.slice();
+      } else {
+        const arr = [];
+        Object.keys(val).forEach(function(k) {
+          const item = Object.assign({}, val[k]);
+          item.id = Number(k);
+          const photoMeta = JSON.parse(localStorage.getItem('mbc4_photos_' + item.id) || 'null');
+          if (photoMeta) {
+            item.photos = photoMeta.photos || [];
+            item.photoMemo = photoMeta.photoMemo || '';
+          } else {
+            item.photos = [];
+            item.photoMemo = '';
+          }
+          if (item.services && !Array.isArray(item.services)) {
+            item.services = Object.values(item.services);
+          } else if (!item.services) {
+            item.services = [];
+          }
+          arr.push(item);
+        });
+        arr.sort(function(a, b) { return (a.order || 0) - (b.order || 0); });
+        fbItems = arr;
+      }
+      fbLoadedFlags.items = true;
+      checkAllLoaded();
+    });
+
+    db.ref('/mbc4/checked').on('value', function(snap) {
+      const val = snap.val() || {};
+      fbChecked = {};
+      Object.keys(val).forEach(function(date) {
+        const raw = val[date];
+        if (Array.isArray(raw)) {
+          fbChecked[date] = raw.filter(function(x) { return x !== null && x !== undefined; });
+        } else if (typeof raw === 'object') {
+          fbChecked[date] = Object.values(raw).filter(function(x) { return x !== null && x !== undefined; });
+        } else {
+          fbChecked[date] = [];
+        }
+      });
+      fbLoadedFlags.checked = true;
+      checkAllLoaded();
+    });
+
+    db.ref('/mbc4/times').on('value', function(snap) {
+      fbTimes = snap.val() || {};
+      fbLoadedFlags.times = true;
+      checkAllLoaded();
+    });
+
+    db.ref('/mbc4/skip').on('value', function(snap) {
+      const val = snap.val() || {};
+      fbSkips = {};
+      Object.keys(val).forEach(function(date) {
+        const raw = val[date];
+        if (Array.isArray(raw)) {
+          fbSkips[date] = raw.filter(function(x) { return x !== null && x !== undefined; });
+        } else if (typeof raw === 'object') {
+          fbSkips[date] = Object.values(raw).filter(function(x) { return x !== null && x !== undefined; });
+        } else {
+          fbSkips[date] = [];
+        }
+      });
+      fbLoadedFlags.skip = true;
+      checkAllLoaded();
+    });
+
+  } catch(e) {
+    console.error('Firebase 초기화 실패:', e);
+    fbItems = JSON.parse(JSON.stringify(DEFAULT_ITEMS));
+    fbLoadedFlags = { items: true, checked: true, times: true, skip: true };
+    renderList();
+  }
+}
+
+let allLoadedOnce = false;
+function checkAllLoaded() {
+  if (fbLoadedFlags.items && fbLoadedFlags.checked && fbLoadedFlags.times && fbLoadedFlags.skip) {
+    if (!allLoadedOnce) allLoadedOnce = true;
+    renderList();
+    renderSkipPanel();
+    updateProgress();
+  }
+}
+
 // ==================== UTILITIES ====================
 function escapeHtml(str) {
   return String(str)
@@ -1034,35 +1156,72 @@ function getCurrentTimeStr() {
 
 // ==================== STORAGE ====================
 function loadItems() {
+  if (fbItems !== null) return fbItems;
   try { const r = localStorage.getItem(K.ITEMS); if (r) return JSON.parse(r); } catch(e) {}
-  const items = JSON.parse(JSON.stringify(DEFAULT_ITEMS));
-  saveItems(items); return items;
+  return JSON.parse(JSON.stringify(DEFAULT_ITEMS));
 }
-function saveItems(items) { try { localStorage.setItem(K.ITEMS, JSON.stringify(items)); } catch(e) {} }
+function saveItems(items) {
+  fbItems = items;
+  if (db) {
+    const obj = {};
+    items.forEach(function(item, idx) {
+      const toSave = Object.assign({}, item, { order: idx });
+      if (item.photos && item.photos.length > 0) {
+        localStorage.setItem('mbc4_photos_' + item.id, JSON.stringify({
+          photos: item.photos,
+          photoMemo: item.photoMemo || ''
+        }));
+      }
+      delete toSave.photos;
+      delete toSave.photoMemo;
+      obj[item.id] = toSave;
+    });
+    db.ref('/mbc4/items').set(obj).catch(function(e) {
+      console.error('Firebase items 저장 실패:', e);
+    });
+  } else {
+    try { localStorage.setItem(K.ITEMS, JSON.stringify(items)); } catch(e) {}
+  }
+}
 
-function loadChecked() {
-  try { const r = localStorage.getItem(K.CHECKED); if (r) return JSON.parse(r); } catch(e) {}
-  return {};
+function loadChecked() { return Object.assign({}, fbChecked); }
+function getTodayChecked() { return (fbChecked[getToday()] || []).slice(); }
+function setTodayChecked(ids) {
+  fbChecked[getToday()] = ids;
+  if (db) {
+    db.ref('/mbc4/checked/' + getToday()).set(ids).catch(function(e) {
+      console.error('Firebase checked 저장 실패:', e);
+    });
+  } else {
+    try { const all = JSON.parse(localStorage.getItem(K.CHECKED) || '{}'); all[getToday()] = ids; localStorage.setItem(K.CHECKED, JSON.stringify(all)); } catch(e) {}
+  }
 }
-function saveChecked(d) { try { localStorage.setItem(K.CHECKED, JSON.stringify(d)); } catch(e) {} }
-function getTodayChecked() { return loadChecked()[getToday()] || []; }
-function setTodayChecked(ids) { const c = loadChecked(); c[getToday()] = ids; saveChecked(c); }
 
-function loadTimes() {
-  try { const r = localStorage.getItem(K.TIMES); if (r) return JSON.parse(r); } catch(e) {}
-  return {};
+function loadTimes() { return Object.assign({}, fbTimes); }
+function getTodayTimes() { return Object.assign({}, fbTimes[getToday()] || {}); }
+function setTodayTimes(d) {
+  fbTimes[getToday()] = d;
+  if (db) {
+    db.ref('/mbc4/times/' + getToday()).set(d).catch(function(e) {
+      console.error('Firebase times 저장 실패:', e);
+    });
+  } else {
+    try { const all = JSON.parse(localStorage.getItem(K.TIMES) || '{}'); all[getToday()] = d; localStorage.setItem(K.TIMES, JSON.stringify(all)); } catch(e) {}
+  }
 }
-function saveTimes(d) { try { localStorage.setItem(K.TIMES, JSON.stringify(d)); } catch(e) {} }
-function getTodayTimes() { return loadTimes()[getToday()] || {}; }
-function setTodayTimes(d) { const t = loadTimes(); t[getToday()] = d; saveTimes(t); }
 
-function loadSkips() {
-  try { const r = localStorage.getItem(K.SKIP); if (r) return JSON.parse(r); } catch(e) {}
-  return {};
+function loadSkips() { return Object.assign({}, fbSkips); }
+function getTodaySkips() { return (fbSkips[getToday()] || []).slice(); }
+function setTodaySkips(d) {
+  fbSkips[getToday()] = d;
+  if (db) {
+    db.ref('/mbc4/skip/' + getToday()).set(d).catch(function(e) {
+      console.error('Firebase skip 저장 실패:', e);
+    });
+  } else {
+    try { const all = JSON.parse(localStorage.getItem(K.SKIP) || '{}'); all[getToday()] = d; localStorage.setItem(K.SKIP, JSON.stringify(all)); } catch(e) {}
+  }
 }
-function saveSkips(d) { try { localStorage.setItem(K.SKIP, JSON.stringify(d)); } catch(e) {} }
-function getTodaySkips() { return loadSkips()[getToday()] || []; }
-function setTodaySkips(d) { const s = loadSkips(); s[getToday()] = d; saveSkips(s); }
 
 // ==================== INDEXEDDB ====================
 let photoDB = null;
@@ -1290,6 +1449,11 @@ function toggleSkipPanel() {
 }
 
 function renderList() {
+  if (!fbLoadedFlags.items) {
+    const container = document.getElementById('cards-container');
+    if (container) container.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-muted);">⏳ 데이터 불러오는 중...</div>';
+    return;
+  }
   const items = loadItems();
   const checked = getTodayChecked();
   const skips = getTodaySkips();
@@ -2441,6 +2605,14 @@ function exportData() {
 
 function confirmClearAll() {
   openConfirm('전체 데이터 삭제', '모든 배달 기록과 설정이 삭제됩니다. 정말 삭제하시겠습니까?', () => {
+    if (db) {
+      db.ref('/mbc4/checked').remove();
+      db.ref('/mbc4/times').remove();
+      db.ref('/mbc4/skip').remove();
+      fbChecked = {};
+      fbTimes = {};
+      fbSkips = {};
+    }
     [K.ITEMS, K.CHECKED, K.TIMES, K.SKIP, K.TIMER, K.ROLE].forEach(k => { try { localStorage.removeItem(k); } catch(e) {} });
     expandedCardId = null;
     timerRunning = false;
@@ -2578,6 +2750,7 @@ function init() {
   applyTheme(savedTheme);
   initPhotoDB().catch(e => console.warn('IndexedDB init failed:', e));
   renderHeader();
+  initFirebase();
   renderList();
   checkIOSInstall();
   registerSW();

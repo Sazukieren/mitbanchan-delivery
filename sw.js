@@ -22,15 +22,20 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // 카카오맵, 구글폰트 등 외부 API는 캐시 안 함 (항상 네트워크)
-  if (
-    e.request.url.includes('kakao') ||
-    e.request.url.includes('dapi.') ||
-    e.request.url.includes('fonts.googleapis') ||
-    e.request.url.includes('fonts.gstatic')
-  ) {
-    return;
-  }
+  const url = e.request.url;
+  try {
+    const {hostname} = new URL(url);
+    if (hostname === 'firebasedatabase.app' || hostname.endsWith('.firebasedatabase.app') ||
+        hostname === 'googleapis.com' || hostname.endsWith('.googleapis.com') ||
+        hostname === 'gstatic.com' || hostname.endsWith('.gstatic.com') ||
+        hostname === 'firebaseapp.com' || hostname.endsWith('.firebaseapp.com') ||
+        hostname === 'openstreetmap.org' || hostname.endsWith('.openstreetmap.org') ||
+        hostname === 'unpkg.com' || hostname.endsWith('.unpkg.com') ||
+        hostname.includes('kakao') ||
+        hostname.includes('dapi.')) {
+      return; // 네트워크 직접 요청
+    }
+  } catch(err) {}
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
   );
