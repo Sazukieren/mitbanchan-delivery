@@ -10,6 +10,8 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
   <title>밑반찬배달</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=15691c254fcdc256864c06e150ac6c8d&libraries=services"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -985,10 +987,130 @@ const CCTV_LOCATIONS = [
 const K = {
   ITEMS:'mbc4_items', CHECKED:'mbc4_checked', TIMES:'mbc4_times',
   TIMER:'mbc4_timer', THEME:'mbc4_theme', ROLE:'mbc4_role',
-  SKIP:'mbc4_skip', INSTALL_DISMISSED:'mbc4_install_dismissed'
+  SKIP:'mbc4_skip', INSTALL_DISMISSED:'mbc4_install_dismissed',
+  PHOTOS_META:'mbc4_photos_meta'
 };
 
 const ALL_SERVICES = ['도시락','빨래수거','안부확인','약배달','청소','기타'];
+
+// ==================== FIREBASE ====================
+const firebaseConfig = {
+  apiKey: "AIzaSyBIDDuBhfuHfeLCEarlNwsx18Z9Qx1L0Uw",
+  authDomain: "mitbanchan.firebaseapp.com",
+  databaseURL: "https://mitbanchan-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "mitbanchan",
+  storageBucket: "mitbanchan.firebasestorage.app",
+  messagingSenderId: "800118599682",
+  appId: "1:800118599682:web:755caa589243b2b09df71b"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// In-memory Firebase state (null = not yet loaded)
+let fbItems = null;
+let fbChecked = {};
+let fbTimes = {};
+let fbSkips = {};
+let fbItemsLoaded = false;
+let fbCheckedLoaded = false;
+let fbTimesLoaded = false;
+let fbSkipsLoaded = false;
+
+function isFbReady() {
+  return fbItemsLoaded && fbCheckedLoaded && fbTimesLoaded && fbSkipsLoaded;
+}
+
+// Photos metadata (stored locally per device)
+function getLocalPhotosMeta() {
+  try { const r = localStorage.getItem(K.PHOTOS_META); if (r) return JSON.parse(r); } catch(e) {}
+  return {};
+}
+function saveLocalPhotosMeta(meta) {
+  try { localStorage.setItem(K.PHOTOS_META, JSON.stringify(meta)); } catch(e) {}
+}
+function mergePhotosIntoItems(items) {
+  const meta = getLocalPhotosMeta();
+  return items.map(item => ({
+    ...item,
+    photos: (meta[item.id] && meta[item.id].photos) || [],
+    photoMemo: (meta[item.id] && meta[item.id].photoMemo !== undefined) ? meta[item.id].photoMemo : ''
+  }));
+}
+
+// Convert Firebase value that may be an array-like object back to a JS array
+function fbToArray(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  return Object.keys(val).sort((a,b) => Number(a)-Number(b)).map(k => val[k]);
+}
+
+function initFirebase() {
+  try { db.ref('/mbc4').keepSynced(true); } catch(e) {}
+
+  // Items
+  db.ref('/mbc4/items').on('value', snapshot => {
+    const val = snapshot.val();
+    if (val === null) {
+      // First run: initialize Firebase with DEFAULT_ITEMS
+      const itemsObj = {};
+      DEFAULT_ITEMS.forEach((item, idx) => {
+        const {photos, photoMemo, ...itemData} = item;
+        itemsObj[item.id] = {...itemData, order: idx};
+      });
+      db.ref('/mbc4/items').set(itemsObj).catch(e => console.warn('FB init items:', e));
+      fbItems = mergePhotosIntoItems(JSON.parse(JSON.stringify(DEFAULT_ITEMS)));
+    } else {
+      fbItems = mergePhotosIntoItems(
+        Object.values(val)
+          .sort((a, b) => (a.order !== undefined ? a.order : a.id) - (b.order !== undefined ? b.order : b.id))
+          .map(item => ({...item, services: fbToArray(item.services)}))
+      );
+    }
+    if (!fbItemsLoaded) {
+      fbItemsLoaded = true;
+      if (isFbReady()) { renderHeader(); renderList(); }
+    } else {
+      renderHeader(); renderList(); renderSettings();
+    }
+  }, e => console.warn('FB items error:', e));
+
+  // Checked
+  db.ref('/mbc4/checked').on('value', snapshot => {
+    const val = snapshot.val() || {};
+    fbChecked = {};
+    Object.keys(val).forEach(date => { fbChecked[date] = fbToArray(val[date]); });
+    if (!fbCheckedLoaded) {
+      fbCheckedLoaded = true;
+      if (isFbReady()) { renderHeader(); renderList(); }
+    } else {
+      renderHeader(); renderList();
+    }
+  }, e => console.warn('FB checked error:', e));
+
+  // Times
+  db.ref('/mbc4/times').on('value', snapshot => {
+    fbTimes = snapshot.val() || {};
+    if (!fbTimesLoaded) {
+      fbTimesLoaded = true;
+      if (isFbReady()) { renderHeader(); renderList(); }
+    } else {
+      renderList();
+    }
+  }, e => console.warn('FB times error:', e));
+
+  // Skip
+  db.ref('/mbc4/skip').on('value', snapshot => {
+    const val = snapshot.val() || {};
+    fbSkips = {};
+    Object.keys(val).forEach(date => { fbSkips[date] = fbToArray(val[date]); });
+    if (!fbSkipsLoaded) {
+      fbSkipsLoaded = true;
+      if (isFbReady()) { renderHeader(); renderList(); }
+    } else {
+      renderList();
+    }
+  }, e => console.warn('FB skip error:', e));
+}
 
 // ==================== UTILITIES ====================
 function escapeHtml(str) {
@@ -1027,33 +1149,53 @@ function getCurrentTimeStr() {
 
 // ==================== STORAGE ====================
 function loadItems() {
-  try { const r = localStorage.getItem(K.ITEMS); if (r) return JSON.parse(r); } catch(e) {}
-  const items = JSON.parse(JSON.stringify(DEFAULT_ITEMS));
-  saveItems(items); return items;
+  return fbItems !== null ? fbItems : [];
 }
-function saveItems(items) { try { localStorage.setItem(K.ITEMS, JSON.stringify(items)); } catch(e) {} }
+function saveItems(items) {
+  // Save photos metadata locally (per device)
+  const meta = getLocalPhotosMeta();
+  items.forEach(item => {
+    meta[item.id] = { photos: item.photos || [], photoMemo: item.photoMemo || '' };
+  });
+  saveLocalPhotosMeta(meta);
+  // Optimistic update of in-memory state
+  fbItems = items;
+  // Save to Firebase (without photos/photoMemo to reduce size)
+  const itemsObj = {};
+  items.forEach((item, idx) => {
+    const {photos, photoMemo, ...itemData} = item;
+    itemsObj[item.id] = {...itemData, order: idx};
+  });
+  db.ref('/mbc4/items').set(itemsObj).catch(e => console.warn('FB save items:', e));
+}
 
 function loadChecked() {
-  try { const r = localStorage.getItem(K.CHECKED); if (r) return JSON.parse(r); } catch(e) {}
-  return {};
+  return Object.assign({}, fbChecked);
 }
-function saveChecked(d) { try { localStorage.setItem(K.CHECKED, JSON.stringify(d)); } catch(e) {} }
+function saveChecked(d) {
+  fbChecked = d;
+  db.ref('/mbc4/checked').set(d).catch(e => console.warn('FB save checked:', e));
+}
 function getTodayChecked() { return loadChecked()[getToday()] || []; }
 function setTodayChecked(ids) { const c = loadChecked(); c[getToday()] = ids; saveChecked(c); }
 
 function loadTimes() {
-  try { const r = localStorage.getItem(K.TIMES); if (r) return JSON.parse(r); } catch(e) {}
-  return {};
+  return Object.assign({}, fbTimes);
 }
-function saveTimes(d) { try { localStorage.setItem(K.TIMES, JSON.stringify(d)); } catch(e) {} }
+function saveTimes(d) {
+  fbTimes = d;
+  db.ref('/mbc4/times').set(d).catch(e => console.warn('FB save times:', e));
+}
 function getTodayTimes() { return loadTimes()[getToday()] || {}; }
 function setTodayTimes(d) { const t = loadTimes(); t[getToday()] = d; saveTimes(t); }
 
 function loadSkips() {
-  try { const r = localStorage.getItem(K.SKIP); if (r) return JSON.parse(r); } catch(e) {}
-  return {};
+  return Object.assign({}, fbSkips);
 }
-function saveSkips(d) { try { localStorage.setItem(K.SKIP, JSON.stringify(d)); } catch(e) {} }
+function saveSkips(d) {
+  fbSkips = d;
+  db.ref('/mbc4/skip').set(d).catch(e => console.warn('FB save skip:', e));
+}
 function getTodaySkips() { return loadSkips()[getToday()] || []; }
 function setTodaySkips(d) { const s = loadSkips(); s[getToday()] = d; saveSkips(s); }
 
@@ -1275,6 +1417,11 @@ function toggleSkipPanel() {
 }
 
 function renderList() {
+  const container = document.getElementById('cards-container');
+  if (fbItems === null) {
+    container.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-muted);">⏳ 데이터 불러오는 중...</div>';
+    return;
+  }
   const items = loadItems();
   const checked = getTodayChecked();
   const skips = getTodaySkips();
@@ -1282,7 +1429,6 @@ function renderList() {
   const isTuesday = new Date().getDay() === 2;
   updateProgress();
   renderSkipPanel();
-  const container = document.getElementById('cards-container');
   const pending = items.filter(i => !checked.includes(i.id) && !skipIds.includes(i.id));
   const done = items.filter(i => checked.includes(i.id));
   let h = '';
@@ -2248,7 +2394,11 @@ function exportData() {
 
 function confirmClearAll() {
   openConfirm('전체 데이터 삭제', '모든 배달 기록과 설정이 삭제됩니다. 정말 삭제하시겠습니까?', () => {
-    [K.ITEMS, K.CHECKED, K.TIMES, K.SKIP, K.TIMER, K.ROLE].forEach(k => { try { localStorage.removeItem(k); } catch(e) {} });
+    db.ref('/mbc4/items').remove().catch(e => console.warn('FB rm items:', e));
+    db.ref('/mbc4/checked').remove().catch(e => console.warn('FB rm checked:', e));
+    db.ref('/mbc4/times').remove().catch(e => console.warn('FB rm times:', e));
+    db.ref('/mbc4/skip').remove().catch(e => console.warn('FB rm skip:', e));
+    [K.TIMER, K.ROLE, K.PHOTOS_META].forEach(k => { try { localStorage.removeItem(k); } catch(e) {} });
     expandedCardId = null;
     timerRunning = false;
     clearInterval(timerInterval);
@@ -2386,6 +2536,7 @@ function init() {
   initPhotoDB().catch(e => console.warn('IndexedDB init failed:', e));
   renderHeader();
   renderList();
+  initFirebase();
   checkIOSInstall();
   registerSW();
 }
