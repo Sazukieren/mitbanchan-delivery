@@ -687,9 +687,80 @@
     .top3-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
     .top3-row:first-child { border-top: none; }
     .top3-rank { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    /* Lock Screen */
+    #lock-screen {
+      position: fixed; inset: 0; z-index: 9999;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      transition: opacity 0.4s ease;
+    }
+    #lock-screen.unlock-fade { opacity: 0; pointer-events: none; }
+    #lock-screen.hidden { display: none; }
+    #lock-content {
+      display: flex; flex-direction: column; align-items: center; gap: 20px;
+      width: 100%; max-width: 320px; padding: 0 20px;
+    }
+    #lock-title { font-size: 26px; font-weight: 700; color: var(--text); }
+    #lock-subtitle { font-size: 15px; color: var(--text-muted); margin-top: -12px; }
+    #pin-dots { display: flex; gap: 20px; }
+    .pin-dot {
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 2px solid var(--accent); background: transparent;
+      transition: background 0.15s;
+    }
+    .pin-dot.filled { background: var(--accent); }
+    #pin-error { height: 18px; font-size: 13px; color: var(--danger); font-weight: 600; }
+    #keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; width: 100%; }
+    .key-btn {
+      height: 74px; border-radius: 50%; border: none;
+      background: var(--card); color: var(--text);
+      font-family: inherit; font-size: 24px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent; border: 1px solid var(--border);
+    }
+    .key-btn:active { background: var(--accent); color: #fff; transform: scale(0.92); }
+    .key-empty { background: transparent; border-color: transparent; cursor: default; }
+    .key-empty:active { background: transparent; transform: none; }
+    .key-back { font-size: 22px; }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      15%, 45%, 75% { transform: translateX(-10px); }
+      30%, 60%, 90% { transform: translateX(10px); }
+    }
+    #pin-dots.shake { animation: shake 0.45s ease; }
   </style>
 </head>
 <body>
+
+<!-- Lock Screen -->
+<div id="lock-screen">
+  <div id="lock-content">
+    <div id="lock-title">🍱 밑반찬배달</div>
+    <div id="lock-subtitle">비밀번호를 입력하세요</div>
+    <div id="pin-dots">
+      <div class="pin-dot" id="dot-0"></div>
+      <div class="pin-dot" id="dot-1"></div>
+      <div class="pin-dot" id="dot-2"></div>
+      <div class="pin-dot" id="dot-3"></div>
+    </div>
+    <div id="pin-error"></div>
+    <div id="keypad">
+      <button class="key-btn" onclick="pinInput('1')">1</button>
+      <button class="key-btn" onclick="pinInput('2')">2</button>
+      <button class="key-btn" onclick="pinInput('3')">3</button>
+      <button class="key-btn" onclick="pinInput('4')">4</button>
+      <button class="key-btn" onclick="pinInput('5')">5</button>
+      <button class="key-btn" onclick="pinInput('6')">6</button>
+      <button class="key-btn" onclick="pinInput('7')">7</button>
+      <button class="key-btn" onclick="pinInput('8')">8</button>
+      <button class="key-btn" onclick="pinInput('9')">9</button>
+      <button class="key-btn key-empty" disabled></button>
+      <button class="key-btn" onclick="pinInput('0')">0</button>
+      <button class="key-btn key-back" onclick="pinBackspace()">⌫</button>
+    </div>
+  </div>
+</div>
+
 <div id="app">
   <!-- PWA Install Banner -->
   <div id="install-banner" class="hidden">
@@ -1997,10 +2068,57 @@ function renderSettings() {
     <span class="settings-row-label">🗑 전체 데이터 삭제</span>
     <span class="settings-row-value">›</span>
   </div>
+</div>
+<div class="settings-section">
+  <div class="settings-section-title">🔐 비밀번호 변경</div>
+  <div style="padding:12px 16px 16px;">
+    <div class="modal-field">
+      <label>현재 비밀번호</label>
+      <input type="password" class="modal-input" id="pw-current" maxlength="4" inputmode="numeric" placeholder="현재 비밀번호 4자리">
+    </div>
+    <div class="modal-field">
+      <label>새 비밀번호 (4자리)</label>
+      <input type="password" class="modal-input" id="pw-new" maxlength="4" inputmode="numeric" placeholder="새 비밀번호 4자리">
+    </div>
+    <div class="modal-field">
+      <label>새 비밀번호 확인</label>
+      <input type="password" class="modal-input" id="pw-confirm" maxlength="4" inputmode="numeric" placeholder="새 비밀번호 다시 입력">
+    </div>
+    <div id="pw-change-msg" style="min-height:18px;font-size:13px;font-weight:600;margin-bottom:10px;"></div>
+    <button class="btn btn-primary" style="width:100%;" onclick="changePinPassword()">변경하기</button>
+  </div>
 </div>`;
 }
 
 function setRole(role) { try { localStorage.setItem(K.ROLE, role); } catch(e) {} }
+
+function changePinPassword() {
+  const cur = document.getElementById('pw-current').value.trim();
+  const nw = document.getElementById('pw-new').value.trim();
+  const cf = document.getElementById('pw-confirm').value.trim();
+  const msgEl = document.getElementById('pw-change-msg');
+  if (cur !== getStoredPin()) {
+    msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = '현재 비밀번호가 틀렸습니다';
+    return;
+  }
+  if (!/^\d{4}$/.test(nw)) {
+    msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = '새 비밀번호는 숫자 4자리여야 합니다';
+    return;
+  }
+  if (nw !== cf) {
+    msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = '새 비밀번호가 일치하지 않습니다';
+    return;
+  }
+  localStorage.setItem(PIN_KEY, nw);
+  msgEl.style.color = 'var(--success)';
+  msgEl.textContent = '비밀번호가 변경되었습니다 ✓';
+  document.getElementById('pw-current').value = '';
+  document.getElementById('pw-new').value = '';
+  document.getElementById('pw-confirm').value = '';
+}
 
 function openEditModal(id) {
   const item = loadItems().find(i => i.id === id);
@@ -2178,6 +2296,61 @@ function showToast(msg, isError) {
   toastTimer = setTimeout(() => { el.className = ''; }, 2200);
 }
 
+// ==================== LOCK SCREEN ====================
+const PIN_KEY = 'mbc4_pin';
+const SESSION_UNLOCK_KEY = 'mbc4_unlocked';
+let pinBuffer = '';
+
+function getStoredPin() {
+  return localStorage.getItem(PIN_KEY) || '1234';
+}
+
+function pinInput(digit) {
+  if (pinBuffer.length >= 4) return;
+  pinBuffer += digit;
+  updatePinDots();
+  if (pinBuffer.length === 4) {
+    setTimeout(checkPin, 120);
+  }
+}
+
+function pinBackspace() {
+  if (pinBuffer.length === 0) return;
+  pinBuffer = pinBuffer.slice(0, -1);
+  updatePinDots();
+}
+
+function updatePinDots() {
+  for (let i = 0; i < 4; i++) {
+    document.getElementById('dot-' + i).classList.toggle('filled', i < pinBuffer.length);
+  }
+}
+
+function checkPin() {
+  if (pinBuffer === getStoredPin()) {
+    sessionStorage.setItem(SESSION_UNLOCK_KEY, '1');
+    const ls = document.getElementById('lock-screen');
+    ls.classList.add('unlock-fade');
+    setTimeout(() => ls.classList.add('hidden'), 400);
+  } else {
+    const dots = document.getElementById('pin-dots');
+    dots.classList.add('shake');
+    document.getElementById('pin-error').textContent = '비밀번호가 틀렸습니다';
+    setTimeout(() => {
+      dots.classList.remove('shake');
+      document.getElementById('pin-error').textContent = '';
+      pinBuffer = '';
+      updatePinDots();
+    }, 500);
+  }
+}
+
+function initLockScreen() {
+  if (sessionStorage.getItem(SESSION_UNLOCK_KEY) === '1') {
+    document.getElementById('lock-screen').classList.add('hidden');
+  }
+}
+
 // ==================== AUDIO ====================
 let audioCtx = null;
 
@@ -2207,6 +2380,7 @@ function registerSW() {
 
 // ==================== INIT ====================
 function init() {
+  initLockScreen();
   const savedTheme = localStorage.getItem(K.THEME) || 'dark';
   applyTheme(savedTheme);
   initPhotoDB().catch(e => console.warn('IndexedDB init failed:', e));
