@@ -797,6 +797,7 @@
           <div id="timer-display">00:00:00</div>
           <button id="timer-btn" onclick="toggleTimer()">▶ 시작</button>
         </div>
+        <button id="list-sort-btn" onclick="toggleListSort()" style="font-size:11px;padding:4px 10px;border-radius:12px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-muted);cursor:pointer;margin-top:6px;">📶 거리순</button>
       </div>
       <!-- Skip Panel -->
       <div id="skip-panel">
@@ -814,12 +815,15 @@
     <div id="tab-map" class="tab-panel">
       <div id="map-tab-header">
         <h2>🗺️ 배달 지도</h2>
-        <button id="orientation-btn" class="map-btn" onclick="requestOrientationPermission()" style="display:none;">방향 권한 허용</button>
+        <button id="track-btn" class="map-btn" onclick="toggleTracking()" title="위치 추적">📡</button>
+        <button id="orientation-btn" class="map-btn" onclick="requestOrientationPermission()" style="display:none;">🧭 나침반 권한</button>
+        <button id="sort-btn" class="map-btn" onclick="toggleMapSort()" title="가까운순 정렬" style="font-size:12px;width:auto;padding:0 10px;border-radius:16px;height:36px;">거리순</button>
       </div>
       <div id="map-container">
         <div id="kakao-map"></div>
         <div id="map-controls">
           <button class="map-btn" onclick="centerOnMyLocation()" title="내 위치">📍</button>
+          <button class="map-btn" onclick="focusNearestIncomplete()" title="가까운 미완료 포커스">🎯</button>
           <button class="map-btn" onclick="refreshMapMarkers()" title="새로고침">🔄</button>
         </div>
       </div>
@@ -1220,10 +1224,15 @@ function switchTab(tab) {
     } else if (map) {
       setTimeout(function() { map.invalidateSize(); }, 100);
     }
-  } else if (tab === 'stats') {
-    renderStats();
-  } else if (tab === 'settings') {
-    renderSettings();
+    startLocationTracking();
+    setTimeout(focusNearestIncomplete, 500);
+  } else {
+    stopLocationTracking();
+    if (tab === 'stats') {
+      renderStats();
+    } else if (tab === 'settings') {
+      renderSettings();
+    }
   }
 }
 
@@ -1289,13 +1298,27 @@ function renderList() {
   updateProgress();
   renderSkipPanel();
   const container = document.getElementById('cards-container');
-  const pending = items.filter(i => !checked.includes(i.id) && !skipIds.includes(i.id));
-  const done = items.filter(i => checked.includes(i.id));
+
+  function getItemDist(item) {
+    if (userLat === null) return Infinity;
+    const idx = items.indexOf(item);
+    const coords = getDeliveryCoords(idx);
+    return calcDistance(userLat, userLng, coords[0], coords[1]);
+  }
+
+  let pending = items.filter(i => !checked.includes(i.id) && !skipIds.includes(i.id));
+  let done = items.filter(i => checked.includes(i.id));
+
+  if (listSortByDistance && userLat !== null) {
+    pending.sort((a, b) => getItemDist(a) - getItemDist(b));
+    done.sort((a, b) => getItemDist(a) - getItemDist(b));
+  }
+
   let h = '';
-  pending.forEach(item => { h += buildCardHtml(item, false, isTuesday); });
+  pending.forEach(item => { h += buildCardHtml(item, false, isTuesday, getItemDist(item)); });
   if (done.length > 0) {
     h += `<div class="completed-separator">✓ 완료된 배달 ${done.length}건</div>`;
-    done.forEach(item => { h += buildCardHtml(item, true, isTuesday); });
+    done.forEach(item => { h += buildCardHtml(item, true, isTuesday, getItemDist(item)); });
   }
   container.innerHTML = h;
   if (expandedCardId !== null) {
@@ -1313,7 +1336,7 @@ function getParkingBadge(level) {
   return '';
 }
 
-function buildCardHtml(item, isCompleted, isTuesday) {
+function buildCardHtml(item, isCompleted, isTuesday, distMeters) {
   const tuesdayMark = isTuesday && item.memo && item.memo.includes('화');
   let badges = getParkingBadge(item.parkingLevel);
   if (item.cctv) badges += '<span class="badge badge-cctv">🚨CCTV</span>';
@@ -1334,12 +1357,15 @@ function buildCardHtml(item, isCompleted, isTuesday) {
   svcHtml += '</div>';
   const cctvChk = item.cctv ? 'checked' : '';
   const photoCount = item.photos ? item.photos.length : 0;
+  const distBadge = (userLat !== null && distMeters !== undefined && distMeters !== Infinity)
+    ? `<span class="distance-badge" style="font-size:10px;color:var(--text-muted);margin-left:4px;">📏 ${formatDistance(distMeters)}</span>`
+    : '';
   return `<div class="delivery-card${isCompleted?' completed':''}" id="card-${item.id}">
   <div class="card-main" onclick="toggleCard(${item.id})">
     <div class="card-num-badge">${item.id}</div>
     <div class="card-info">
       <div class="card-name">${escapeHtml(item.name)}${vtHtml}</div>
-      <div class="card-addr">📍 ${escapeHtml(item.addr)}</div>
+      <div class="card-addr">📍 ${escapeHtml(item.addr)}${distBadge}</div>
       <div class="card-badges">${badges}</div>
       ${memoHtml}
     </div>
@@ -1715,6 +1741,185 @@ function navKakaoNavi(id) { const it = loadItems().find(i => i.id === id); if (i
 // ==================== MAP (Leaflet/OpenStreetMap) ====================
 let map = null;
 let myLocationMarker = null;
+let watchId = null;
+let userLat = null, userLng = null;
+let compassHeading = 0;
+let mapSortByDistance = false;
+let listSortByDistance = false;
+
+// Shared delivery coordinates (index matches items array order)
+const DELIVERY_COORDS = [
+  [37.5041, 127.1039], // 1 강효임
+  [37.4960, 127.1200], // 2 김사임
+  [37.5044, 127.1042], // 3 박영자
+  [37.4963, 127.1198], // 4 김용석
+  [37.4965, 127.1195], // 5 임석율
+  [37.4968, 127.1193], // 6 김연순
+  [37.5005, 127.1270], // 7 김금자
+  [37.5027, 127.1155], // 8 백춘성
+  [37.4890, 127.0980], // 9 김정운
+  [37.4890, 127.0980], // 10 (9번동일)
+  [37.5010, 127.1265], // 11 이철승
+  [37.5003, 127.1289], // 12 황태영
+  [37.5003, 127.1289], // 13 (12번가족)
+  [37.5048, 127.1055], // 14 정애금
+  [37.5045, 127.1048], // 15 홍영순
+  [37.4948, 127.1176], // 16 이철우
+  [37.5073, 127.1023], // 17 조인선
+  [37.5070, 127.1025], // 18 박영일
+  [37.5038, 127.1035], // 19 이영민
+];
+
+function getDeliveryCoords(idx) {
+  return DELIVERY_COORDS[idx] || [37.5012 + (idx - 10) * 0.002, 127.1273 + (idx % 5 - 2) * 0.003];
+}
+
+// ----- Distance helpers -----
+function calcDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+    Math.sin(dLng/2) * Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function formatDistance(meters) {
+  if (meters < 1000) return Math.round(meters) + 'm';
+  return (meters/1000).toFixed(1) + 'km';
+}
+
+// ----- Location tracking -----
+function startLocationTracking() {
+  if (!navigator.geolocation) return;
+  if (watchId !== null) return;
+  watchId = navigator.geolocation.watchPosition(
+    function(pos) {
+      userLat = pos.coords.latitude;
+      userLng = pos.coords.longitude;
+      updateMyLocationMarker(userLat, userLng);
+      updateDistanceDisplay();
+    },
+    function() { showToast('위치를 가져올 수 없습니다', true); },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+  );
+  const btn = document.getElementById('track-btn');
+  if (btn) btn.style.background = '#FF6B35';
+}
+
+function stopLocationTracking() {
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+  const btn = document.getElementById('track-btn');
+  if (btn) btn.style.background = '';
+}
+
+function toggleTracking() {
+  if (watchId !== null) {
+    stopLocationTracking();
+  } else {
+    startLocationTracking();
+  }
+}
+
+// ----- My location marker -----
+function buildMyLocationIcon(heading) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="position:relative;width:32px;height:32px;">
+      <div style="position:absolute;top:50%;left:50%;width:14px;height:14px;border-radius:50%;background:#3b82f6;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);transform:translate(-50%,-50%);"></div>
+      <div style="position:absolute;top:0;left:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #3b82f6;transform-origin:bottom center;transform:translateX(-50%) rotate(${heading}deg);"></div>
+    </div>`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16]
+  });
+}
+
+function updateMyLocationMarker(lat, lng) {
+  if (!map || lat === null || lng === null) return;
+  if (myLocationMarker) map.removeLayer(myLocationMarker);
+  myLocationMarker = L.marker([lat, lng], { icon: buildMyLocationIcon(compassHeading) })
+    .addTo(map)
+    .bindPopup('📍 내 위치');
+}
+
+function updateDistanceDisplay() {
+  if (userLat === null) return;
+  if (currentTab === 'map' && map) refreshMapMarkers();
+  if (currentTab === 'list') renderList();
+}
+
+// ----- Compass -----
+function initCompass() {
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission().then(function(state) {
+      if (state === 'granted') {
+        window.addEventListener('deviceorientation', handleOrientation, true);
+      }
+    });
+  } else {
+    window.addEventListener('deviceorientation', handleOrientation, true);
+  }
+}
+
+function handleOrientation(e) {
+  // webkitCompassHeading is degrees clockwise from north (iOS/Safari).
+  // For non-webkit browsers, alpha is degrees counter-clockwise, so invert with 360 - alpha.
+  const heading = e.webkitCompassHeading || (e.alpha ? 360 - e.alpha : 0);
+  compassHeading = heading;
+  updateMyLocationMarker(userLat, userLng);
+}
+
+function requestOrientationPermission() {
+  initCompass();
+  document.getElementById('orientation-btn').style.display = 'none';
+}
+
+// ----- Sort toggles -----
+function toggleMapSort() {
+  mapSortByDistance = !mapSortByDistance;
+  const btn = document.getElementById('sort-btn');
+  if (btn) btn.style.background = mapSortByDistance ? '#FF6B35' : '';
+  refreshMapMarkers();
+}
+
+function toggleListSort() {
+  listSortByDistance = !listSortByDistance;
+  const btn = document.getElementById('list-sort-btn');
+  if (btn) {
+    btn.style.background = listSortByDistance ? '#FF6B35' : 'var(--input-bg)';
+    btn.style.color = listSortByDistance ? '#fff' : 'var(--text-muted)';
+  }
+  renderList();
+}
+
+// ----- Focus nearest incomplete -----
+function focusNearestIncomplete() {
+  if (userLat === null || !map) return;
+  const items = loadItems();
+
+  let nearest = null;
+  let minDist = Infinity;
+
+  items.forEach(function(item, idx) {
+    if (isItemCompleted(item.id)) return;
+    const coords = getDeliveryCoords(idx);
+    const dist = calcDistance(userLat, userLng, coords[0], coords[1]);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = { item, coords, dist };
+    }
+  });
+
+  if (nearest) {
+    map.setView(nearest.coords, 16, { animate: true });
+    showToast('📍 가장 가까운 미완료: ' + nearest.item.name + ' (' + formatDistance(nearest.dist) + ')');
+  }
+}
 
 function loadKakaoMap() {
   initLeafletMap();
@@ -1743,6 +1948,16 @@ function initLeafletMap() {
   mapInitialized = true;
   refreshMapMarkers();
   setTimeout(function() { map.invalidateSize(); }, 300);
+
+  // Show compass button on iOS (requires permission)
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    const ob = document.getElementById('orientation-btn');
+    if (ob) ob.style.display = '';
+  } else {
+    // Android / desktop: start compass automatically
+    initCompass();
+  }
 }
 
 function isItemCompleted(id) {
@@ -1757,44 +1972,59 @@ function refreshMapMarkers() {
     }
   });
 
-  const items = loadItems();
-  const deliveryCoords = [
-    [37.5041, 127.1039], // 1 강효임
-    [37.4960, 127.1200], // 2 김사임
-    [37.5044, 127.1042], // 3 박영자
-    [37.4963, 127.1198], // 4 김용석
-    [37.4965, 127.1195], // 5 임석율
-    [37.4968, 127.1193], // 6 김연순
-    [37.5005, 127.1270], // 7 김금자
-    [37.5027, 127.1155], // 8 백춘성
-    [37.4890, 127.0980], // 9 김정운
-    [37.4890, 127.0980], // 10 (9번동일)
-    [37.5010, 127.1265], // 11 이철승
-    [37.5003, 127.1289], // 12 황태영
-    [37.5003, 127.1289], // 13 (12번가족)
-    [37.5048, 127.1055], // 14 정애금
-    [37.5045, 127.1048], // 15 홍영순
-    [37.4948, 127.1176], // 16 이철우
-    [37.5073, 127.1023], // 17 조인선
-    [37.5070, 127.1025], // 18 박영일
-    [37.5038, 127.1035], // 19 이영민
-  ];
+  let items = loadItems();
 
-  items.forEach(function(item, idx) {
-    const coords = deliveryCoords[idx] || [37.5012 + (idx-10)*0.002, 127.1273 + (idx%5-2)*0.003];
+  // Build items array with coords
+  let itemsWithCoords = items.map(function(item, idx) {
+    return {
+      item: item,
+      coords: getDeliveryCoords(idx),
+      origIdx: idx
+    };
+  });
+
+  // Sort by distance if requested and user location available
+  if (mapSortByDistance && userLat !== null) {
+    itemsWithCoords.sort(function(a, b) {
+      return calcDistance(userLat, userLng, a.coords[0], a.coords[1]) -
+             calcDistance(userLat, userLng, b.coords[0], b.coords[1]);
+    });
+  }
+
+  itemsWithCoords.forEach(function(entry, rankIdx) {
+    const item = entry.item;
+    const coords = entry.coords;
     const completed = isItemCompleted(item.id);
     const color = completed ? '#4ade80' : '#FF6B35';
+    const markerNum = mapSortByDistance && userLat !== null ? (rankIdx + 1) : (entry.origIdx + 1);
 
     const icon = L.divIcon({
       className: '',
-      html: '<div style="width:28px;height:28px;border-radius:50%;background:' + color + ';color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);">' + (idx+1) + '</div>',
+      html: '<div style="width:28px;height:28px;border-radius:50%;background:' + color + ';color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);">' + markerNum + '</div>',
       iconSize: [28, 28],
       iconAnchor: [14, 14]
     });
 
+    const distStr = (userLat !== null)
+      ? '<br><small>📏 ' + formatDistance(calcDistance(userLat, userLng, coords[0], coords[1])) + '</small>'
+      : '';
+
+    const navHtml = `
+<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+  <a href="kakaomap://look?p=${coords[0]},${coords[1]}"
+     onclick="if(!window.navigator.standalone && /iPhone|iPad/.test(navigator.userAgent)){this.href='https://map.kakao.com/link/to/${encodeURIComponent(item.name)},${coords[0]},${coords[1]}';}"
+     style="flex:1;text-align:center;padding:5px 4px;background:#FAE100;color:#3A1D1D;border-radius:6px;font-size:11px;font-weight:700;text-decoration:none;">🟡 카카오</a>
+  <a href="nmap://navigation?dlat=${coords[0]}&dlng=${coords[1]}&dname=${encodeURIComponent(item.name)}&appname=mitbanchan"
+     onclick="setTimeout(function(){window.location='https://map.naver.com/v5/directions/-/-/-/walk';},1500)"
+     style="flex:1;text-align:center;padding:5px 4px;background:#03C75A;color:#fff;border-radius:6px;font-size:11px;font-weight:700;text-decoration:none;">🟢 네이버</a>
+  <a href="https://maps.google.com/?daddr=${coords[0]},${coords[1]}&dirflg=d"
+     target="_blank"
+     style="flex:1;text-align:center;padding:5px 4px;background:#4285F4;color:#fff;border-radius:6px;font-size:11px;font-weight:700;text-decoration:none;">🔵 구글</a>
+</div>`;
+
     L.marker(coords, {icon: icon})
       .addTo(map)
-      .bindPopup('<b>' + escapeHtml(item.name) + '</b><br><small>' + escapeHtml(item.addr) + '</small>');
+      .bindPopup('<b>' + escapeHtml(item.name) + '</b><br><small>' + escapeHtml(item.addr) + '</small>' + distStr + navHtml);
   });
 
   CCTV_LOCATIONS.forEach(function(loc) {
@@ -1806,21 +2036,21 @@ function refreshMapMarkers() {
 
 function centerOnMyLocation() {
   if (!map) { initLeafletMap(); return; }
+  if (userLat !== null) {
+    map.setView([userLat, userLng], 16);
+    updateMyLocationMarker(userLat, userLng);
+    return;
+  }
   if (!navigator.geolocation) { showToast('위치 권한이 없습니다', true); return; }
   navigator.geolocation.getCurrentPosition(function(pos) {
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
-    map.setView([lat, lng], 16);
-    if (myLocationMarker) map.removeLayer(myLocationMarker);
-    myLocationMarker = L.circleMarker([lat, lng], {
-      color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.9, radius: 10, weight: 3
-    }).addTo(map).bindPopup('📍 내 위치').openPopup();
+    userLat = pos.coords.latitude;
+    userLng = pos.coords.longitude;
+    map.setView([userLat, userLng], 16);
+    updateMyLocationMarker(userLat, userLng);
   }, function() {
     showToast('위치를 가져올 수 없습니다', true);
   });
 }
-
-function requestOrientationPermission() {}
 
 // ==================== STATISTICS ====================
 function renderStats() {
