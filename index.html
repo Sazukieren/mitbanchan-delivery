@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="apple-touch-startup-image" href="icon-512.png">
   <title>밑반찬배달</title>
-  <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=15691c254fcdc256864c06e150ac6c8d&libraries=services"></script>
+  <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=15691c254fcdc256864c06e150ac6c8d&libraries=services&autoload=false"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
@@ -1214,7 +1214,7 @@ function switchTab(tab) {
   document.getElementById('nav-' + tab).classList.add('active');
   currentTab = tab;
   if (tab === 'map') {
-    if (!mapInitialized) { tryInitMap(20); }
+    if (!mapInitialized) { loadKakaoMap(); }
     else if (kakaoMap) { setTimeout(() => { kakaoMap.relayout(); kakao.maps.event.trigger(kakaoMap, 'resize'); }, 100); }
   } else if (tab === 'stats') {
     renderStats();
@@ -1714,11 +1714,14 @@ let deliveryMarkers = [];
 let myPosOverlay = null;
 let geoWatchId = null;
 
-function tryInitMap(retries) {
+function loadKakaoMap(retries) {
+  if (retries === undefined) retries = 20;
   if (typeof kakao !== 'undefined' && kakao.maps) {
-    initKakaoMap();
+    kakao.maps.load(function() {
+      initKakaoMap();
+    });
   } else if (retries > 0) {
-    setTimeout(() => tryInitMap(retries - 1), 500);
+    setTimeout(function() { loadKakaoMap(retries - 1); }, 300);
   } else {
     mapInitialized = false;
     document.getElementById('kakao-map').innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);">⚠️ 카카오맵을 불러올 수 없습니다.<br>인터넷 연결을 확인하세요.</div>';
