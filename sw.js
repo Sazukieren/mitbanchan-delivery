@@ -22,11 +22,15 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = e.request.url;
   // Skip caching for external APIs and Firebase
-  if (url.includes('kakao') || url.includes('dapi.') ||
-      url.includes('firebase') || url.includes('gstatic.com') ||
-      url.includes('googleapis.com')) {
-    return; // Let browser handle directly
-  }
+  try {
+    const {hostname} = new URL(url);
+    if (hostname.endsWith('kakao.com') || hostname.endsWith('dapi.kakao.com') ||
+        hostname.endsWith('firebase.io') || hostname.endsWith('firebaseio.com') ||
+        hostname.endsWith('firebaseapp.com') || hostname.endsWith('firebasedatabase.app') ||
+        hostname.endsWith('googleapis.com') || hostname.endsWith('gstatic.com')) {
+      return; // Let browser handle directly
+    }
+  } catch(e) { return; }
   e.respondWith(
     caches.match(e.request).then(r => r || fetch(e.request).catch(() => caches.match('/mitbanchan-delivery/index.html')))
   );
