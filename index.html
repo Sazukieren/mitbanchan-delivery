@@ -20,7 +20,7 @@
   <style>
     :root {
       --bg: #0f1117;
-      --card: #1a1d27;
+      --card: #1e2130;
       --accent: #FF6B35;
       --success: #4ade80;
       --danger: #f87171;
@@ -135,9 +135,19 @@
       font-family: inherit;
       gap: 3px;
       transition: color 0.2s;
+      position: relative;
     }
     .nav-item.active { color: var(--accent); }
-    .nav-icon { font-size: 20px; line-height: 1; }
+    .nav-item.active::after {
+      content: '';
+      position: absolute;
+      bottom: 4px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .nav-icon { font-size: 22px; line-height: 1; }
     .nav-label { font-size: 10px; font-weight: 500; }
     /* List header */
     #list-header {
@@ -155,7 +165,8 @@
       justify-content: space-between;
       margin-bottom: 8px;
     }
-    #today-date { font-size: 15px; font-weight: 700; }
+    #today-date { font-size: 15px; font-weight: 700; line-height: 1.4; }
+    #tuesday-mode-badge { display:none; background:linear-gradient(135deg,#3b82f6,#6366f1); color:#fff; font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; margin-top:4px; }
     #theme-toggle {
       background: var(--input-bg);
       border: 1px solid var(--border);
@@ -174,21 +185,21 @@
       margin-bottom: 4px;
     }
     #progress-bar-track {
-      height: 6px;
+      height: 8px;
       background: var(--border);
-      border-radius: 3px;
+      border-radius: 4px;
       overflow: hidden;
     }
     #progress-bar-fill {
       height: 100%;
-      background: linear-gradient(90deg, var(--accent), #ffaa80);
-      border-radius: 3px;
+      background: linear-gradient(90deg, #FF6B35, #ff4500, #ffaa00);
+      border-radius: 4px;
       transition: width 0.3s ease;
     }
     #timer-row { display: flex; align-items: center; gap: 10px; }
     #timer-display {
       font-family: 'Courier New', monospace;
-      font-size: 18px;
+      font-size: 20px;
       font-weight: 700;
       color: var(--accent);
       flex: 1;
@@ -259,8 +270,16 @@
       margin-bottom: 10px;
       border: 1px solid var(--border);
       overflow: hidden;
-      transition: border-color 0.2s, opacity 0.2s;
-      box-shadow: 0 2px 8px var(--shadow);
+      transition: border-color 0.3s, opacity 0.3s, background 0.3s, transform 0.2s;
+      box-shadow: 0 4px 16px var(--shadow);
+    }
+    .delivery-card.just-completed {
+      animation: completeCard 0.4s ease forwards;
+    }
+    @keyframes completeCard {
+      0% { transform: scale(1); }
+      40% { transform: scale(1.03); }
+      100% { transform: scale(1); }
     }
     .delivery-card.completed {
       background: var(--complete-bg);
@@ -277,10 +296,10 @@
       user-select: none;
     }
     .card-num-badge {
-      width: 32px;
-      height: 32px;
+      width: 34px;
+      height: 34px;
       border-radius: 50%;
-      background: var(--accent);
+      background: linear-gradient(135deg, #FF6B35, #ff4500);
       color: #fff;
       font-weight: 700;
       font-size: 13px;
@@ -288,8 +307,9 @@
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(255,107,53,0.4);
     }
-    .delivery-card.completed .card-num-badge { background: var(--success); }
+    .delivery-card.completed .card-num-badge { background: linear-gradient(135deg, #4ade80, #22c55e); box-shadow: 0 2px 6px rgba(74,222,128,0.4); }
     .card-info { flex: 1; min-width: 0; }
     .card-name {
       font-size: 16px;
@@ -330,7 +350,7 @@
       border: 2px solid var(--border);
       background: var(--input-bg);
       color: var(--text-muted);
-      font-size: 20px;
+      font-size: 22px;
       cursor: pointer;
       flex-shrink: 0;
       display: flex;
@@ -781,7 +801,10 @@
     <div id="tab-list" class="tab-panel active">
       <div id="list-header">
         <div id="list-header-row1">
-          <div id="today-date">로딩 중...</div>
+          <div>
+            <div id="today-date">로딩 중...</div>
+            <div id="tuesday-mode-badge">🔵 화요일 모드 — 9~13번 제외</div>
+          </div>
           <button id="theme-toggle" onclick="toggleTheme()">☀️</button>
         </div>
         <div id="progress-container">
@@ -947,6 +970,28 @@
     <div class="modal-title" id="day-modal-title">날짜 상세</div>
     <div id="day-modal-content"></div>
     <button class="btn btn-secondary" style="width:100%;margin-top:12px;" onclick="closeModal('modal-day')">닫기</button>
+  </div>
+</div>
+
+<!-- Roster Photo Modal -->
+<div id="modal-roster" class="modal-overlay" onclick="modalBgClick(event,'modal-roster')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📋 원본 명단</div>
+    <div id="roster-img-wrap" style="text-align:center;min-height:120px;display:flex;align-items:center;justify-content:center;">
+      <span style="color:var(--text-muted);font-size:14px;">불러오는 중...</span>
+    </div>
+    <button class="btn btn-secondary" style="width:100%;margin-top:14px;" onclick="closeModal('modal-roster')">닫기</button>
+  </div>
+</div>
+
+<!-- Celebration Modal -->
+<div id="modal-celebration" class="modal-overlay">
+  <div class="modal-centered" style="text-align:center;">
+    <div style="font-size:48px;margin-bottom:12px;">🎉</div>
+    <div class="modal-title" style="text-align:center;">오늘 배달 완료!</div>
+    <p id="celebration-message" style="font-size:14px;color:var(--text-muted);margin-bottom:20px;line-height:1.8;"></p>
+    <button class="btn btn-primary" style="width:100%;" onclick="closeModal('modal-celebration')">닫기</button>
   </div>
 </div>
 
@@ -1136,6 +1181,16 @@ function pad(n) { return String(n).padStart(2,'0'); }
 function formatDateKr(d) {
   const days = ['일','월','화','수','목','금','토'];
   return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 ${days[d.getDay()]}요일`;
+}
+
+function formatDateKrFull(d) {
+  const days = ['일','월','화','수','목','금','토'];
+  const dayShort = ['일','월','화','수','목','금','토'];
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h < 12 ? '오전' : '오후';
+  const h12 = h % 12 || 12;
+  return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${dayShort[d.getDay()]}) ${ampm} ${h12}:${pad(m)}`;
 }
 
 function formatMs(ms) {
@@ -1402,8 +1457,17 @@ let confirmCallback = null;
 let objectUrls = {};
 
 // ==================== LIST ====================
+let dateInterval = null;
+
+function updateTodayDate() {
+  const el = document.getElementById('today-date');
+  if (el) el.textContent = formatDateKrFull(new Date());
+}
+
 function renderHeader() {
-  document.getElementById('today-date').textContent = formatDateKr(new Date());
+  updateTodayDate();
+  if (dateInterval) clearInterval(dateInterval);
+  dateInterval = setInterval(updateTodayDate, 60000);
   updateProgress();
   restoreTimer();
 }
@@ -1411,12 +1475,22 @@ function renderHeader() {
 function updateProgress() {
   const items = loadItems();
   const checked = getTodayChecked();
-  const total = items.length;
-  const done = checked.length;
+  const dayOfWeek = new Date().getDay();
+  const isTuesdayMode = dayOfWeek === 2;
+  const TUESDAY_EXCLUDE_IDS = [9, 10, 11, 12, 13];
+  const visibleItems = isTuesdayMode ? items.filter(i => !TUESDAY_EXCLUDE_IDS.includes(i.id)) : items;
+  const visibleIds = visibleItems.map(i => i.id);
+  const visibleChecked = checked.filter(id => visibleIds.includes(id));
+  const total = visibleItems.length;
+  const done = visibleChecked.length;
   const pct = total > 0 ? Math.round(done / total * 100) : 0;
+  const emoji = pct === 0 ? '' : pct < 50 ? ' 🔥' : pct < 100 ? ' ⚡' : ' 🎉';
   document.getElementById('progress-text').textContent = `완료 ${done} / 전체 ${total}`;
-  document.getElementById('progress-pct').textContent = `${pct}%`;
+  document.getElementById('progress-pct').textContent = `${pct}%${emoji}`;
   document.getElementById('progress-bar-fill').style.width = pct + '%';
+  if (pct === 100 && total > 0) {
+    showCompletionCelebration(done);
+  }
 }
 
 function renderSkipPanel() {
@@ -1458,20 +1532,31 @@ function renderList() {
   const checked = getTodayChecked();
   const skips = getTodaySkips();
   const skipIds = skips.map(s => s.id);
-  const isTuesday = new Date().getDay() === 2;
+  const dayOfWeek = new Date().getDay();
+  const isTuesdayMode = dayOfWeek === 2;
+  const TUESDAY_EXCLUDE_IDS = [9, 10, 11, 12, 13];
+
+  // Show/hide Tuesday mode badge
+  const tuesdayBadge = document.getElementById('tuesday-mode-badge');
+  if (tuesdayBadge) tuesdayBadge.style.display = isTuesdayMode ? 'inline-block' : 'none';
+
   updateProgress();
   renderSkipPanel();
   const container = document.getElementById('cards-container');
 
+  // Build display number map: sequential 1-based for visible items
+  const visibleItems = isTuesdayMode ? items.filter(i => !TUESDAY_EXCLUDE_IDS.includes(i.id)) : items;
+  const displayNumMap = {};
+  visibleItems.forEach(function(item, idx) { displayNumMap[item.id] = idx + 1; });
+
   function getItemDist(item) {
     if (userLat === null) return Infinity;
-    const idx = items.indexOf(item);
-    const coords = getDeliveryCoords(idx);
+    const coords = getCoordsByItemId(item.id);
     return calcDistance(userLat, userLng, coords[0], coords[1]);
   }
 
-  let pending = items.filter(i => !checked.includes(i.id) && !skipIds.includes(i.id));
-  let done = items.filter(i => checked.includes(i.id));
+  let pending = visibleItems.filter(i => !checked.includes(i.id) && !skipIds.includes(i.id));
+  let done = visibleItems.filter(i => checked.includes(i.id));
 
   if (listSortByDistance && userLat !== null) {
     pending.sort((a, b) => getItemDist(a) - getItemDist(b));
@@ -1479,10 +1564,10 @@ function renderList() {
   }
 
   let h = '';
-  pending.forEach(item => { h += buildCardHtml(item, false, isTuesday, getItemDist(item)); });
+  pending.forEach(item => { h += buildCardHtml(item, false, isTuesdayMode, getItemDist(item), displayNumMap[item.id]); });
   if (done.length > 0) {
     h += `<div class="completed-separator">✓ 완료된 배달 ${done.length}건</div>`;
-    done.forEach(item => { h += buildCardHtml(item, true, isTuesday, getItemDist(item)); });
+    done.forEach(item => { h += buildCardHtml(item, true, isTuesdayMode, getItemDist(item), displayNumMap[item.id]); });
   }
   container.innerHTML = h;
   if (expandedCardId !== null) {
@@ -1500,8 +1585,8 @@ function getParkingBadge(level) {
   return '';
 }
 
-function buildCardHtml(item, isCompleted, isTuesday, distMeters) {
-  const tuesdayMark = isTuesday && item.memo && item.memo.includes('화');
+function buildCardHtml(item, isCompleted, isTuesdayMode, distMeters, displayNum) {
+  const tuesdayMark = isTuesdayMode && item.memo && item.memo.includes('화');
   let badges = getParkingBadge(item.parkingLevel);
   if (item.cctv) badges += '<span class="badge badge-cctv">🚨CCTV</span>';
   if (tuesdayMark) badges += '<span class="badge badge-tuesday">화 🗓</span>';
@@ -1524,9 +1609,10 @@ function buildCardHtml(item, isCompleted, isTuesday, distMeters) {
   const distBadge = (userLat !== null && distMeters !== undefined && distMeters !== Infinity)
     ? `<span class="distance-badge" style="font-size:10px;color:var(--text-muted);margin-left:4px;">📏 ${formatDistance(distMeters)}</span>`
     : '';
+  const num = displayNum !== undefined ? displayNum : item.id;
   return `<div class="delivery-card${isCompleted?' completed':''}" id="card-${item.id}">
   <div class="card-main" onclick="toggleCard(${item.id})">
-    <div class="card-num-badge">${item.id}</div>
+    <div class="card-num-badge">${num}</div>
     <div class="card-info">
       <div class="card-name">${escapeHtml(item.name)}${vtHtml}</div>
       <div class="card-addr">📍 ${escapeHtml(item.addr)}${distBadge}</div>
@@ -1601,10 +1687,16 @@ function buildCardHtml(item, isCompleted, isTuesday, distMeters) {
     </div>
     <div style="margin-bottom:12px;">
       <div class="detail-label">사진 (${photoCount}장)</div>
-      <label class="btn btn-sm btn-secondary" style="cursor:pointer;display:inline-flex;">
-        📷 사진 찍기
-        <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="handlePhotoInput(${item.id},this)">
-      </label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <label class="btn btn-sm btn-secondary" style="cursor:pointer;display:inline-flex;">
+          📷 카메라로 찍기
+          <input type="file" accept="image/*" capture="environment" style="display:none;" onchange="handlePhotoInput(${item.id},this)">
+        </label>
+        <label class="btn btn-sm btn-secondary" style="cursor:pointer;display:inline-flex;">
+          🖼️ 갤러리에서 선택
+          <input type="file" accept="image/*" style="display:none;" onchange="handlePhotoInput(${item.id},this)">
+        </label>
+      </div>
       <div class="photo-grid" id="pgrid-${item.id}">
         <span style="font-size:12px;color:var(--text-muted);">탭하면 사진을 불러옵니다</span>
       </div>
@@ -1768,11 +1860,18 @@ function toggleComplete(id) {
     }
     const item = loadItems().find(i => i.id === id);
     showToast(`✓ ${item ? item.name : ''} 배달 완료!`);
-    playBeep();
-    if (navigator.vibrate) try { navigator.vibrate([200,100,200]); } catch(e) {}
+    triggerHaptic();
+    playCompleteSound();
+    // Card animation
+    const cardEl = document.getElementById('card-' + id);
+    if (cardEl) {
+      cardEl.classList.add('just-completed');
+      setTimeout(function() { cardEl.classList.remove('just-completed'); }, 500);
+    }
   } else {
     checked.splice(idx, 1);
     setTodayChecked(checked);
+    triggerHaptic();
   }
   if (expandedCardId === id) expandedCardId = null;
   renderList();
@@ -1911,28 +2010,36 @@ let compassHeading = 0;
 let mapSortByDistance = false;
 let listSortByDistance = false;
 
-// Shared delivery coordinates (index matches items array order)
+// Shared delivery coordinates keyed by item id
 const DELIVERY_COORDS = [
-  [37.5044, 127.1041], // 1 강효임
-  [37.4962, 127.1196], // 2 김사임
-  [37.5048, 127.1038], // 3 박영자
-  [37.4960, 127.1194], // 4 김용석
-  [37.4958, 127.1191], // 5 임석율
-  [37.4955, 127.1188], // 6 김연순
-  [37.5008, 127.1268], // 7 김금자
-  [37.5028, 127.1158], // 8 백춘성
-  [37.4893, 127.0976], // 9 김정운
-  [37.4893, 127.0978], // 10 (9번동일)
-  [37.5012, 127.1262], // 11 이철승
-  [37.5005, 127.1285], // 12 황태영
-  [37.5005, 127.1287], // 13 (12번가족)
-  [37.5050, 127.1058], // 14 정애금
-  [37.5047, 127.1051], // 15 홍영순
-  [37.4950, 127.1178], // 16 이철우
-  [37.5075, 127.1021], // 17 조인선
-  [37.5072, 127.1019], // 18 박영일
-  [37.5040, 127.1037], // 19 이영민
+  [37.5044, 127.1041], // 1 강효임 — 백제고분로40길 16-17
+  [37.4962, 127.1196], // 2 김사임 — 가락로 11길 8-14
+  [37.5048, 127.1038], // 3 박영자 — 백제고분로 40길 36-22
+  [37.4960, 127.1194], // 4 김용석 — 가락로 108
+  [37.4958, 127.1191], // 5 임석율 — 가락로 21길 30
+  [37.4955, 127.1188], // 6 김연순 — 가락로21길 60
+  [37.5008, 127.1268], // 7 김금자 — 오금로22길 26
+  [37.5028, 127.1158], // 8 백춘성 — 백제고분로 420 탑리빙텔
+  [37.4893, 127.0976], // 9 김정운 — 양재대로 71길 4-18
+  [37.4893, 127.0978], // 10 (9번동일) — 양재대로 71길 4-18
+  [37.5012, 127.1262], // 11 이철승 — 오금로 27길 50-15
+  [37.5005, 127.1285], // 12 황태영 — 오금로29길 12
+  [37.5005, 127.1287], // 13 (12번가족) — 오금로29길 12
+  [37.5050, 127.1058], // 14 정애금 — 백제고분로45길 5-17
+  [37.5047, 127.1051], // 15 홍영순 — 백제고분로41길 43-15
+  [37.4950, 127.1178], // 16 이철우 — 송파대로48길 9
+  [37.5075, 127.1021], // 17 조인선 — 석촌호수로18길 19-12
+  [37.5072, 127.1019], // 18 박영일 — 석촌호수로18길 8
+  [37.5040, 127.1037], // 19 이영민 — 백제고분로37가길 3-7
 ];
+
+// Build id→coord map (1-based)
+const COORD_MAP = {};
+DELIVERY_COORDS.forEach(function(coord, idx) { COORD_MAP[idx + 1] = coord; });
+
+function getCoordsByItemId(id) {
+  return COORD_MAP[id] || [37.5012, 127.1273];
+}
 
 function getDeliveryCoords(idx) {
   return DELIVERY_COORDS[idx] || [37.5012 + (idx - 10) * 0.002, 127.1273 + (idx % 5 - 2) * 0.003];
@@ -1991,14 +2098,25 @@ function toggleTracking() {
 
 // ----- My location marker -----
 function buildMyLocationIcon(heading) {
+  if (heading !== null && heading !== undefined && heading !== 0 || compassHeading) {
+    const h = heading || compassHeading;
+    return L.divIcon({
+      className: '',
+      html: `<div style="position:relative;width:40px;height:40px;">
+        <div style="position:absolute;inset:0;border-radius:50%;background:#3b82f6;opacity:0.9;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>
+        <svg style="position:absolute;top:-14px;left:50%;transform:translateX(-50%) rotate(${h}deg);transform-origin:50% calc(100% + 0px);" width="16" height="20" viewBox="0 0 16 20">
+          <polygon points="8,0 14,16 8,12 2,16" fill="#3b82f6" stroke="#fff" stroke-width="1.5"/>
+        </svg>
+      </div>`,
+      iconSize: [40, 40],
+      iconAnchor: [20, 20]
+    });
+  }
   return L.divIcon({
     className: '',
-    html: `<div style="position:relative;width:32px;height:32px;">
-      <div style="position:absolute;top:50%;left:50%;width:14px;height:14px;border-radius:50%;background:#3b82f6;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.4);transform:translate(-50%,-50%);"></div>
-      <div style="position:absolute;top:0;left:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #3b82f6;transform-origin:bottom center;transform:translateX(-50%) rotate(${heading}deg);"></div>
-    </div>`,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16]
+    html: `<div style="width:20px;height:20px;border-radius:50%;background:#3b82f6;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10]
   });
 }
 
@@ -2071,7 +2189,7 @@ function focusNearestIncomplete() {
 
   items.forEach(function(item, idx) {
     if (isItemCompleted(item.id)) return;
-    const coords = getDeliveryCoords(idx);
+    const coords = getCoordsByItemId(item.id);
     const dist = calcDistance(userLat, userLng, coords[0], coords[1]);
     if (dist < minDist) {
       minDist = dist;
@@ -2142,7 +2260,7 @@ function refreshMapMarkers() {
   let itemsWithCoords = items.map(function(item, idx) {
     return {
       item: item,
-      coords: getDeliveryCoords(idx),
+      coords: getCoordsByItemId(item.id),
       origIdx: idx
     };
   });
@@ -2444,6 +2562,20 @@ function renderSettings() {
     <div id="pw-change-msg" style="min-height:18px;font-size:13px;font-weight:600;margin-bottom:10px;"></div>
     <button class="btn btn-primary" style="width:100%;" onclick="changePinPassword()">변경하기</button>
   </div>
+</div>
+<div class="settings-section">
+  <div class="settings-section-title">📋 원본 명단 보기</div>
+  <div class="settings-row">
+    <span class="settings-row-label">📋 원본 명단 보기</span>
+    <button class="btn btn-sm btn-secondary" onclick="openRosterModal()">보기</button>
+  </div>
+  <div class="settings-row">
+    <span class="settings-row-label">📤 명단 사진 업로드</span>
+    <label class="btn btn-sm btn-secondary" style="cursor:pointer;">
+      선택
+      <input type="file" accept="image/*" style="display:none;" onchange="handleRosterUpload(this)">
+    </label>
+  </div>
 </div>`;
 }
 
@@ -2623,7 +2755,58 @@ function confirmClearAll() {
   });
 }
 
-// ==================== MODALS ====================
+// ==================== COMPLETION CELEBRATION ====================
+const CELEBRATION_KEY = 'mbc4_celebration_shown';
+
+function showCompletionCelebration(doneCount) {
+  if (sessionStorage.getItem(CELEBRATION_KEY + '_' + getToday())) return;
+  sessionStorage.setItem(CELEBRATION_KEY + '_' + getToday(), '1');
+  const timerStart = localStorage.getItem(K.TIMER);
+  const elapsed = timerStart ? Date.now() - parseInt(timerStart, 10) : 0;
+  const mins = elapsed > 0 ? Math.round(elapsed / 60000) : 0;
+  const msgEl = document.getElementById('celebration-message');
+  if (msgEl) {
+    msgEl.textContent = `총 ${doneCount}명${mins > 0 ? ' · ' + mins + '분 소요' : ''}\n수고하셨습니다! 🍱`;
+    msgEl.style.whiteSpace = 'pre-line';
+  }
+  openModal('modal-celebration');
+}
+
+// ==================== ROSTER PHOTO ====================
+function openRosterModal() {
+  openModal('modal-roster');
+  const wrap = document.getElementById('roster-img-wrap');
+  if (!wrap) return;
+  // Try IndexedDB first
+  dbLoad('roster_photo').then(function(blob) {
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      wrap.innerHTML = `<img src="${url}" style="max-width:100%;max-height:65vh;border-radius:10px;" alt="원본 명단" onerror="this.parentElement.innerHTML='<span style=color:var(--text-muted)>명단 사진이 없습니다</span>'">`;
+    } else {
+      // Fallback to GitHub raw image
+      const url = 'https://raw.githubusercontent.com/Sazukieren/mitbanchan-delivery/main/roster.jpg';
+      wrap.innerHTML = `<img src="${url}" style="max-width:100%;max-height:65vh;border-radius:10px;" alt="원본 명단" onerror="this.parentElement.innerHTML='<span style=color:var(--text-muted)>명단 사진이 없습니다</span>'">`;
+    }
+  }).catch(function() {
+    const url = 'https://raw.githubusercontent.com/Sazukieren/mitbanchan-delivery/main/roster.jpg';
+    wrap.innerHTML = `<img src="${url}" style="max-width:100%;max-height:65vh;border-radius:10px;" alt="원본 명단" onerror="this.parentElement.innerHTML='<span style=color:var(--text-muted)>명단 사진이 없습니다</span>'">`;
+  });
+}
+
+async function handleRosterUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  try {
+    const blob = await resizeImage(file, 1200, 0.9);
+    await dbSave('roster_photo', blob);
+    showToast('📋 명단 사진이 저장되었습니다');
+    renderSettings();
+  } catch(e) {
+    console.error('Roster upload error:', e);
+    showToast('명단 사진 저장 실패', true);
+  }
+  input.value = '';
+}
 function openModal(id) {
   document.getElementById(id).classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -2716,25 +2899,28 @@ function initLockScreen() {
   }
 }
 
-// ==================== AUDIO ====================
+// ==================== AUDIO & HAPTIC ====================
 let audioCtx = null;
 
-function playBeep() {
+function triggerHaptic() {
+  if (navigator.vibrate) try { navigator.vibrate([30, 10, 30]); } catch(e) {}
+}
+
+function playCompleteSound() {
   try {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.frequency.setValueAtTime(523, audioCtx.currentTime);
-    osc.frequency.setValueAtTime(659, audioCtx.currentTime + 0.1);
-    osc.frequency.setValueAtTime(784, audioCtx.currentTime + 0.2);
-    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
-    osc.start(audioCtx.currentTime);
-    osc.stop(audioCtx.currentTime + 0.4);
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(523, ctx.currentTime); // C5
+    osc.frequency.setValueAtTime(659, ctx.currentTime + 0.1); // E5
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
   } catch(e) {}
 }
+
+function playBeep() { playCompleteSound(); }
 
 // ==================== SERVICE WORKER ====================
 function registerSW() {
@@ -2746,7 +2932,10 @@ function registerSW() {
 // ==================== INIT ====================
 function init() {
   initLockScreen();
-  const savedTheme = localStorage.getItem(K.THEME) || 'dark';
+  let savedTheme = localStorage.getItem(K.THEME);
+  if (!savedTheme) {
+    savedTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
   applyTheme(savedTheme);
   initPhotoDB().catch(e => console.warn('IndexedDB init failed:', e));
   renderHeader();
