@@ -1185,12 +1185,11 @@ function formatDateKr(d) {
 
 function formatDateKrFull(d) {
   const days = ['일','월','화','수','목','금','토'];
-  const dayShort = ['일','월','화','수','목','금','토'];
   const h = d.getHours();
   const m = d.getMinutes();
   const ampm = h < 12 ? '오전' : '오후';
   const h12 = h % 12 || 12;
-  return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${dayShort[d.getDay()]}) ${ampm} ${h12}:${pad(m)}`;
+  return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${days[d.getDay()]}) ${ampm} ${h12}:${pad(m)}`;
 }
 
 function formatMs(ms) {
@@ -2098,7 +2097,7 @@ function toggleTracking() {
 
 // ----- My location marker -----
 function buildMyLocationIcon(heading) {
-  if (heading !== null && heading !== undefined && heading !== 0 || compassHeading) {
+  if ((heading !== null && heading !== undefined && heading !== 0) || compassHeading) {
     const h = heading || compassHeading;
     return L.divIcon({
       className: '',
